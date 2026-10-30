@@ -126,3 +126,9 @@ begin
     insert into public.user_roles (user_id,employee_id,role) values (uid,r.emp,r.role);
   end loop;
 end $$;
+
+-- Which email signs in as which employee (used by Clerk sign-in)
+insert into public.app_logins (email, employee_id, role) values
+('priya.kulkarni@sahyadritech.in','EMP002','hr_admin'),
+('rahul.deshmukh@sahyadritech.in','EMP004','manager'),
+('neha.patil@sahyadritech.in','EMP009','employee');

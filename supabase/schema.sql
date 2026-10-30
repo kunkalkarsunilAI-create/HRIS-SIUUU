@@ -211,3 +211,40 @@ grant execute on function app.my_emp_id(), app.my_role(), app.is_hr(), app.in_my
 revoke execute on function app.guard_leave_update() from authenticated;
 revoke execute on function public.touch_updated_at() from public, anon, authenticated;
 revoke all on all tables in schema public from anon;
+
+-- =====================================================================
+-- Clerk sign-in (Supabase third-party auth)
+-- Clerk session tokens carry role=authenticated (Supabase integration) and an
+-- "email" custom claim. The database maps that verified email to an employee and role.
+-- =====================================================================
+create table public.app_logins (
+  email text primary key check (email = lower(email)),
+  employee_id text not null references public.employees(id) on delete cascade,
+  role text not null check (role in ('employee','manager','hr_admin')),
+  created_at timestamptz not null default now()
+);
+alter table public.app_logins enable row level security;
+
+create or replace function app.my_email() returns text language sql stable security definer set search_path = '' as
+$$ select lower(nullif(auth.jwt() ->> 'email', '')) $$;
+create or replace function app.my_emp_id() returns text language sql stable security definer set search_path = '' as
+$$ select employee_id from public.app_logins where email = app.my_email() $$;
+create or replace function app.my_role() returns text language sql stable security definer set search_path = '' as
+$$ select role from public.app_logins where email = app.my_email() $$;
+create or replace function app.is_hr() returns boolean language sql stable security definer set search_path = '' as
+$$ select coalesce((select role = 'hr_admin' from public.app_logins where email = app.my_email()), false) $$;
+revoke execute on function app.my_email() from public, anon;
+grant execute on function app.my_email() to authenticated;
+
+create policy logins_read on public.app_logins for select to authenticated
+  using (email = (select app.my_email()) or (select app.is_hr()));
+
+-- Clerk user IDs are not uuids, so created_by keeps a uuid only when the subject is one
+create or replace function app.sub_uuid() returns uuid language sql stable set search_path = '' as
+$$ select case when (auth.jwt() ->> 'sub') ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then (auth.jwt() ->> 'sub')::uuid end $$;
+grant execute on function app.sub_uuid() to authenticated;
+alter table public.employees          alter column created_by set default app.sub_uuid();
+alter table public.employee_sensitive alter column created_by set default app.sub_uuid();
+alter table public.leave_requests     alter column created_by set default app.sub_uuid();
+alter table public.documents          alter column created_by set default app.sub_uuid();
+alter table public.attendance         alter column created_by set default app.sub_uuid();

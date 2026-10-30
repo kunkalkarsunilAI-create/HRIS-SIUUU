@@ -261,7 +261,12 @@ const ROLES = {
 const SUPABASE_URL = "https://qonjlwsyjknvxqmochjk.supabase.co";
 // Publishable key: safe to ship in the browser. What each person can read or change is enforced by Row Level Security in the database.
 const SUPABASE_KEY = "sb_publishable_9t9fr_1nE1yNX73Je398pA_QvyeDQyY";
-const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+// Sign-in is handled by Clerk. Clerk's session token is passed to Supabase (third-party auth),
+// and the database identifies the person by the verified email claim in that token.
+const CLERK_PUBLISHABLE_KEY = "__CLERK_KEY__";
+const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+  accessToken: async () => (window.Clerk && window.Clerk.session) ? await window.Clerk.session.getToken() : null
+});
 let S = {employees:[], leaves:[], attendance:{}, audit:[], seq:{letter:1}};
 let role = null, ME = null;
 const me = () => ME;
@@ -852,8 +857,7 @@ document.addEventListener("click", e=>{
   const a=t.dataset.a, id=t.dataset.id;
   if(t.tagName==="A") return;
   switch(a){
-    case "signout": db.auth.signOut().then(()=>{ history.replaceState(null,"",location.pathname); showLogin(); }); break;
-    case "demo": { const f=$("#loginForm"); f.email.value=t.dataset.email; f.password.value="Sahyadri@2026"; f.requestSubmit(); break; }
+    case "signout": window.Clerk.signOut().then(()=>{ history.replaceState(null,"",location.pathname); showLogin(); }); break;
     case "close": closeDrawer(); break;
     case "openEmp":
       if(!visibleEmps().some(x=>x.id===id) && role!=="hr_admin"){
@@ -919,15 +923,6 @@ function leaveCalc(){
 document.addEventListener("submit", e=>{
   e.preventDefault();
   const f=e.target;
-  if(f.id==="loginForm"){
-    const btn=f.querySelector('[type=submit]'), msg=$("#loginErr"); btn.disabled=true; msg.textContent="";
-    db.auth.signInWithPassword({email:f.email.value.trim(), password:f.password.value}).then(({error})=>{
-      btn.disabled=false;
-      if(error){ msg.textContent = error.message==="Invalid login credentials" ? "That email and password don't match. Check them and try again." : error.message; return; }
-      boot();
-    });
-    return;
-  }
   if(f.id==="empForm"){
     const {v,errs,aadNote} = validateEmp(f);
     if(Object.keys(errs).length){ const first=f.querySelector(".field.invalid input,.field.invalid select"); first&&first.focus(); toast("Fix the highlighted fields to continue."); return; }
@@ -963,32 +958,45 @@ document.addEventListener("submit", e=>{
       {ok:"Sent to "+ename(self.manager||"EMP002")+" for approval.", logMsg:`Applied for leave (${type}, ${n} days, ${fmt(from)} to ${fmt(to)})`});
   }
 });
-function showLogin(msg){
+function loadScript(src, attrs={}){
+  return new Promise((res,rej)=>{ const el=document.createElement("script"); el.src=src; el.crossOrigin="anonymous"; el.async=true;
+    for(const [k,v] of Object.entries(attrs)) el.setAttribute(k,v);
+    el.onload=res; el.onerror=()=>rej(new Error("Couldn't load "+src)); document.head.appendChild(el); });
+}
+async function loadClerk(){
+  if(window.Clerk && window.Clerk.loaded) return window.Clerk;
+  const domain = atob(CLERK_PUBLISHABLE_KEY.split("_")[2]).slice(0,-1);
+  await loadScript(`https://${domain}/npm/@clerk/ui@1/dist/ui.browser.js`);
+  await loadScript(`https://${domain}/npm/@clerk/clerk-js@6/dist/clerk.browser.js`, {"data-clerk-publishable-key": CLERK_PUBLISHABLE_KEY});
+  await window.Clerk.load({ ui: { ClerkUI: window.__internal_ClerkUICtor } });
+  let wasSignedIn = window.Clerk.isSignedIn;
+  window.Clerk.addListener(()=>{ const now = !!window.Clerk.isSignedIn; if(now!==wasSignedIn){ wasSignedIn=now; now ? boot() : showLogin(); } });
+  return window.Clerk;
+}
+function showLogin(msg, signedInButUnlinked){
   role=null; ME=null; closeDrawer();
   $(".app").classList.add("locked"); $("#nav").innerHTML="";
-  const demo=[["priya.kulkarni@sahyadritech.in","Priya Kulkarni","HR Admin"],["rahul.deshmukh@sahyadritech.in","Rahul Deshmukh","Manager"],["neha.patil@sahyadritech.in","Neha Patil","Employee"]];
-  $("#main").innerHTML = `<div class="card login">
-    <div><h1>Sign in</h1><p style="margin:4px 0 0;color:var(--muted)">Use your Sahyadri work email.</p></div>
-    <form id="loginForm" class="form" style="grid-template-columns:1fr" novalidate>
-      <div class="field"><label for="lg_email">Work email</label><input id="lg_email" name="email" type="email" autocomplete="username" required></div>
-      <div class="field"><label for="lg_pw">Password</label><input id="lg_pw" name="password" type="password" autocomplete="current-password" required></div>
-      <p class="err" id="loginErr">${esc(msg||"")}</p>
-      <button class="btn pri" type="submit">Sign in</button>
-    </form>
-    <div class="section-label" style="grid-column:auto">Demo accounts</div>
-    <p style="margin:-6px 0 0;font-size:13px;color:var(--muted)">Tap one to sign in. Password for all three: <span class="mono">Sahyadri@2026</span></p>
-    <div class="demo">${demo.map(d=>`<button class="btn" data-a="demo" data-email="${d[0]}"><b>${d[1]}</b><span class="pill">${d[2]}</span></button>`).join("")}</div>
+  $("#main").innerHTML = `<div class="login">
+    <div class="card" style="display:flex;flex-direction:column;gap:6px"><h1>Sign in to Sahyadri HRIS</h1>
+      <p style="margin:0;color:var(--muted)">Use your work email or Google account. Your role decides what you can see.</p>
+      ${msg?`<p class="err" role="alert">${esc(msg)}</p>`:""}
+      ${signedInButUnlinked?'<div><button class="btn" data-a="signout">Sign out and use another account</button></div>':""}
+    </div>
+    <div id="clerkSignIn"></div>
   </div>`;
+  if(!signedInButUnlinked && window.Clerk && window.Clerk.loaded) window.Clerk.mountSignIn($("#clerkSignIn"), { fallbackRedirectUrl: location.href, signUpFallbackRedirectUrl: location.href });
 }
 async function boot(){
-  let session=null;
-  try { ({data:{session}} = await db.auth.getSession()); } catch(e){}
-  if(!session) return showLogin();
-  $("#main").innerHTML = '<div class="empty">Loading your workspace…</div>';
-  const {data:ur, error} = await db.from("user_roles").select("employee_id,role").eq("user_id", session.user.id).maybeSingle();
-  if(error || !ur){ await db.auth.signOut(); return showLogin(error ? "Couldn't reach the database: "+error.message : "This login isn't linked to an employee record yet. Ask HR to set it up."); }
+  $("#main").innerHTML = '<div class="empty">Loading…</div>';
+  let C;
+  try { C = await loadClerk(); } catch(e){ $("#main").innerHTML = `<div class="card login"><h1>Sign-in is unavailable</h1><p class="err">${esc(e.message)}. Check your internet connection and reload.</p></div>`; return; }
+  if(!C.isSignedIn) return showLogin();
+  const email = (C.user.primaryEmailAddress && C.user.primaryEmailAddress.emailAddress || "").toLowerCase();
+  const {data:ur, error} = await db.from("app_logins").select("employee_id,role").eq("email", email).maybeSingle();
+  if(error) return showLogin("Couldn't reach the database: "+error.message+". If this keeps happening, HR should check the Clerk and Supabase connection.", true);
+  if(!ur) return showLogin(`${email} isn't linked to an employee record yet. Ask HR to add it.`, true);
   role = ur.role; ME = ur.employee_id; ui.leaveTab="apply";
-  try { await loadAll(); } catch(e){ return showLogin("Couldn't load data: "+e.message); }
+  try { await loadAll(); } catch(e){ return showLogin("Couldn't load data: "+e.message, true); }
   $(".app").classList.remove("locked");
   $("#whoName").textContent = ename(ME)+" · "+ROLES[role].label;
   route();

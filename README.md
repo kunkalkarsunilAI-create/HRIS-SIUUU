@@ -2,7 +2,7 @@
 
 A demo HR Information System (core HRMS) built for the *New Age HR Applications using AI* course, following section 10 of the guide "Claude Skills for HR Tech".
 
-It is a single `index.html` file with no build step. Data is stored in **Supabase** (Postgres), with sign-in through Supabase Auth and Row Level Security on every table.
+It is a single `index.html` file with no build step. Data is stored in **Supabase** (Postgres) with Row Level Security on every table, and sign-in is handled by **Clerk**.
 
 ## Modules
 
@@ -14,15 +14,19 @@ It is a single `index.html` file with no build step. Data is stored in **Supabas
 - **Compliance**: PF ECR in EPFO upload format, ESI, professional tax (Maharashtra and Karnataka), gratuity liability.
 - **Audit trail** of approvals, record changes and views of sensitive fields.
 
-## Sign in
+## Sign in (Clerk)
 
-| Login | Role | Sees |
+Sign-in uses **Clerk** (email and password, or Google). Clerk's session token is passed to Supabase as a third-party auth token, and the database maps the verified email in that token to an employee and role in the `app_logins` table.
+
+| Login email | Role | Sees |
 | --- | --- | --- |
 | priya.kulkarni@sahyadritech.in | HR Admin | Everything, including salary, PAN, UAN and the audit trail |
 | rahul.deshmukh@sahyadritech.in | Manager | Their reporting line; approves team leave (over 5 days goes on to HR) |
 | neha.patil@sahyadritech.in | Employee | Their own record, leave, attendance and pay summary |
 
-Demo password for all three: `Sahyadri@2026`. Change it before any real use.
+Create these users in the Clerk dashboard (Users → Create user) to use them. An email that isn't in `app_logins` can sign in to Clerk but sees no data.
+
+Setup: in Clerk, activate the Supabase integration and add `{"email": "{{user.primary_email_address}}"}` to the session token. In Supabase, add Clerk under Authentication → Third-Party Auth. Then put the Clerk publishable key in `CLERK_PUBLISHABLE_KEY` in `index.html`.
 
 ## Database (Supabase)
 
