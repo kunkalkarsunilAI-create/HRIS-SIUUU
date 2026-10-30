@@ -2,7 +2,7 @@
 
 A demo HR Information System (core HRMS) built for the *New Age HR Applications using AI* course, following section 10 of the guide "Claude Skills for HR Tech".
 
-It is a single `index.html` file with no build step and no server. Open it in any browser.
+It is a single `index.html` file with no build step. Data is stored in **Supabase** (Postgres), with sign-in through Supabase Auth and Row Level Security on every table.
 
 ## Modules
 
@@ -14,16 +14,37 @@ It is a single `index.html` file with no build step and no server. Open it in an
 - **Compliance**: PF ECR in EPFO upload format, ESI, professional tax (Maharashtra and Karnataka), gratuity liability.
 - **Audit trail** of approvals, record changes and views of sensitive fields.
 
-## Roles
+## Sign in
 
-Switch with the "Viewing as" menu: HR Admin (Priya Kulkarni), Manager (Rahul Deshmukh), Employee (Neha Patil).
+| Login | Role | Sees |
+| --- | --- | --- |
+| priya.kulkarni@sahyadritech.in | HR Admin | Everything, including salary, PAN, UAN and the audit trail |
+| rahul.deshmukh@sahyadritech.in | Manager | Their reporting line; approves team leave (over 5 days goes on to HR) |
+| neha.patil@sahyadritech.in | Employee | Their own record, leave, attendance and pay summary |
+
+Demo password for all three: `Sahyadri@2026`. Change it before any real use.
+
+## Database (Supabase)
+
+- `supabase/schema.sql`: tables, Row Level Security policies and the leave-approval rules enforced in the database.
+- `supabase/seed.sql`: the fictional sample company and the three demo logins.
+
+How access is enforced:
+
+- Salary and ID fields live in a separate `employee_sensitive` table that only HR (and the employee themself) can read.
+- Only the last 4 digits of Aadhaar are stored.
+- Managers can read and act on leave only for people in their reporting line. A database trigger blocks anyone approving their own leave, and sends long or maternity leave to HR.
+- Every approval and change is written to `audit_log`, readable by HR only.
+- The browser uses Supabase's publishable key, which is safe to ship. Access comes from the signed-in user and the policies above.
+
+To set up your own copy, create a Supabase project, run `schema.sql` then `seed.sql` in the SQL editor, and put your project URL and publishable key at the top of the script in `index.html`.
 
 ## Run it
 
-- Locally: open `index.html` in a browser.
-- Online with GitHub Pages: repository **Settings → Pages → Deploy from a branch → `main` / root → Save**. The site appears at `https://<your-username>.github.io/<repo-name>/`.
+- Live on Vercel, which redeploys automatically on every push to `main`.
+- Locally: open `index.html` in a browser (needs internet to reach Supabase).
 
 ## Notes
 
-- All data is fictional sample data and is saved only in the viewer's browser (localStorage). "Reset demo data" restores it.
+- All data is fictional sample data.
 - Statutory rates, due dates and holidays are illustrative. Verify against current EPFO, ESIC and state notifications before real use.

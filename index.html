@@ -172,6 +172,12 @@ tfoot td{font-weight:600;background:var(--raised)}
 .letter table th{background:#f0f4f5;text-transform:none;letter-spacing:0;font-size:12px}
 .sign{margin-top:28px}
 
+.app.locked{grid-template-columns:1fr}
+.app.locked nav.rail,.app.locked .who{display:none}
+.login{max-width:420px;margin:24px auto;width:100%;display:flex;flex-direction:column;gap:14px}
+.login .err{color:var(--bad);font-size:14px;margin:0}
+.demo{display:flex;flex-direction:column;gap:6px}
+.demo button{justify-content:space-between;text-align:left}
 .bar{height:8px;border-radius:99px;background:var(--raised);overflow:hidden}
 .bar i{display:block;height:100%;background:var(--accent);border-radius:99px}
 
@@ -195,17 +201,11 @@ tfoot td{font-weight:600;background:var(--raised)}
 </style>
 </head>
 <body>
-<div class="app">
+<div class="app locked">
   <header class="top">
     <div class="brand"><div class="mark">S</div><div>Sahyadri HRIS<small>Sahyadri Tech Pvt Ltd · Pune</small></div></div>
     <div class="spacer"></div>
-    <div class="who"><label for="roleSel">Viewing as</label>
-      <select id="roleSel">
-        <option value="hr_admin">Priya Kulkarni · HR Admin</option>
-        <option value="manager">Rahul Deshmukh · Manager</option>
-        <option value="employee">Neha Patil · Employee</option>
-      </select>
-    </div>
+    <div class="who"><span id="whoName"></span><button class="btn sm" data-a="signout">Sign out</button></div>
   </header>
   <nav class="rail" id="nav" aria-label="Modules"></nav>
   <main id="main" aria-live="polite"></main>
@@ -213,11 +213,11 @@ tfoot td{font-weight:600;background:var(--raised)}
 <div class="overlay" id="ov" role="dialog" aria-modal="true"><div class="drawer" id="drawer"></div></div>
 <div class="toast" id="toast" role="status"></div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 (function(){
 "use strict";
 /* ---------------- helpers ---------------- */
-const KEY = "sahyadri-hris-demo-v1";
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const pad = n => String(n).padStart(2,"0");
@@ -257,76 +257,59 @@ const ROLES = {
   employee:{me:"EMP009", label:"Employee"}
 };
 
-/* ---------------- seed data ---------------- */
-function seed(){
-  const E = (id,name,gender,designation,dept,manager,doj,ctc,loc,type,status,pan,uan,aad,extra={}) =>
-    Object.assign({id,name,gender,designation,dept,manager,doj,ctc,location:loc,type,status,
-      email:name.toLowerCase().split(" ")[0]+"."+name.toLowerCase().split(" ").slice(-1)[0]+"@sahyadritech.in",
-      phone:"9"+String(800000000+parseInt(id.slice(3))*7311937).slice(0,9),
-      pan,uan,aadhaarLast4:aad,bankLast4:String(1000+parseInt(id.slice(3))*613).slice(-4),
-      elCarry: Math.min(30, Math.max(0, Math.floor(yearsBetween(doj,"2026-01-01")*4))),
-      docs:[]}, extra);
-  const emps = [
-    E("EMP001","Anand Joshi","M","Chief Executive Officer","Leadership",null,"2015-04-01",6000000,"Pune","Full-time","Active","AKJPJ4821L","100912345601","4417"),
-    E("EMP002","Priya Kulkarni","F","HR Manager","People",  "EMP001","2018-06-11",1800000,"Pune","Full-time","Active","BQKPK7710H","100912345602","9032"),
-    E("EMP003","Farhan Shaikh","M","Finance Lead","Finance","EMP001","2019-01-07",2000000,"Pune","Full-time","Active","CZXPS2290M","100912345603","1276"),
-    E("EMP004","Rahul Deshmukh","M","Engineering Manager","Engineering","EMP001","2017-08-21",3200000,"Pune","Full-time","Active","DRTPD5531K","100912345604","6650"),
-    E("EMP005","Kavya Iyer","F","Product Manager","Product","EMP001","2021-03-15",2600000,"Bengaluru","Full-time","Active","EVBPI8803Q","100912345605","3381"),
-    E("EMP006","Sameer Gupta","M","Senior Software Engineer","Engineering","EMP004","2020-11-02",2200000,"Pune","Full-time","Active","FGHPG1145R","100912345606","7724"),
-    E("EMP007","Ananya Rao","F","Senior Software Engineer","Engineering","EMP004","2022-02-14",2000000,"Bengaluru","Full-time","Active","GHJPR6672T","100912345607","5508"),
-    E("EMP008","Vikram Singh","M","QA Engineer","Engineering","EMP004","2023-07-03",900000,"Pune","Full-time","Active","HJKPS3398U","100912345608","2290"),
-    E("EMP009","Neha Patil","F","Software Engineer","Engineering","EMP004","2026-06-01",1100000,"Pune","Full-time","Probation","JKLPP9021V","100912345609","8143"),
-    E("EMP010","Arjun Menon","M","Product Designer","Product","EMP005","2024-01-08",1300000,"Pune","Full-time","Active","KLMPM4410W","100912345610","6017"),
-    E("EMP011","Sneha Pawar","F","HR Executive","People","EMP002","2025-09-15",480000,"Pune","Full-time","Active","LMNPP2287X","100912345611","3902"),
-    E("EMP012","Rohan Kadam","M","Accounts Executive","Finance","EMP003","2024-05-20",360000,"Pune","Full-time","Active","MNBPK7765Y","100912345612","4471"),
-    E("EMP013","Pooja Bhosale","F","Engineering Intern","Engineering","EMP006","2026-07-01",240000,"Pune","Intern","Active","NBVPB1123Z","100912345613","9988"),
-    E("EMP014","Imran Qureshi","M","Office Assistant","Admin","EMP003","2022-10-10",216000,"Pune","Full-time","Active","PQRPQ5541A","100912345614","1150"),
-    E("EMP015","Meera Nair","F","Senior Software Engineer","Engineering","EMP004","2019-05-06",2300000,"Pune","Full-time","Notice","QWEPN8876B","100912345615","7362",{lwd:"2026-11-20"})
-  ];
-  emps.forEach(e=>{
-    e.docs = [
-      {name:"Offer letter", kind:"Letter", date:e.doj, status:"Issued"},
-      {name:"PAN card", kind:"ID proof", date:e.doj, status:"Verified"},
-      {name:"Aadhaar (masked copy)", kind:"ID proof", date:e.doj, status:"Verified"},
-      {name:"Education certificates", kind:"Qualification", date:e.doj, status: e.id==="EMP009"||e.id==="EMP013" ? "Pending" : "Verified"}
-    ];
-    if(e.id==="EMP015") e.docs.push({name:"Resignation email", kind:"Exit", date:"2026-10-21", status:"Received"});
-  });
-  const L = (id,emp,type,from,to,status,reason,applied) => ({id,emp,type,from,to,status,reason,applied:applied||from,history:[]});
-  const leaves = [
-    L("LV101","EMP007","ML","2026-09-14","2027-03-14","Approved","Maternity leave","2026-08-20"),
-    L("LV102","EMP006","SL","2026-10-12","2026-10-13","Approved","Fever","2026-10-12"),
-    L("LV103","EMP014","LOP","2026-10-22","2026-10-23","Approved","Personal work, no balance","2026-10-19"),
-    L("LV104","EMP009","EL","2026-11-11","2026-11-13","Pending manager","Diwali at home in Kolhapur","2026-10-28"),
-    L("LV105","EMP008","CL","2026-11-02","2026-11-02","Pending manager","Bank work","2026-10-29"),
-    L("LV106","EMP010","EL","2026-11-16","2026-11-27","Pending HR","Family wedding in Kochi","2026-10-26"),
-    L("LV107","EMP003","EL","2026-08-03","2026-08-07","Approved","Vacation","2026-07-15"),
-    L("LV108","EMP009","SL","2026-09-08","2026-09-08","Approved","Migraine","2026-09-08"),
-    L("LV109","EMP012","CL","2026-10-29","2026-10-30","Approved","Sister's engagement","2026-10-20"),
-    L("LV110","EMP013","CL","2026-10-05","2026-10-05","Rejected","Trip","2026-10-03")
-  ];
-  leaves.forEach(l=>{ l.history.push({at:l.applied+" 10:00", by:l.emp, act:"Applied"}); if(l.status==="Approved") l.history.push({at:l.applied+" 15:30", by: mgrOfSeed(emps,l.emp), act:"Approved"}); if(l.status==="Pending HR") l.history.push({at:l.applied+" 16:10", by:mgrOfSeed(emps,l.emp), act:"Approved by manager, sent to HR (more than 5 days)"}); if(l.status==="Rejected") l.history.push({at:l.applied+" 12:00", by:mgrOfSeed(emps,l.emp), act:"Rejected: release sprint"}); });
-  return {
-    employees: emps, leaves, attendance:{}, seq:{emp:15, leave:110, letter:1},
-    audit:[
-      {at:"2026-10-28 10:02", by:"EMP009", act:"Applied for leave LV104 (EL, 3 days)"},
-      {at:"2026-10-26 16:10", by:"EMP005", act:"Approved LV106 at manager level; sent to HR"},
-      {at:"2026-10-21 18:45", by:"EMP002", act:"Recorded resignation of EMP015 Meera Nair; LWD 20 Nov 2026"},
-      {at:"2026-10-19 11:20", by:"EMP003", act:"Approved LOP for EMP014 (2 days)"}
-    ]
-  };
-}
-function mgrOfSeed(emps,id){ const e=emps.find(x=>x.id===id); return e&&e.manager||"EMP002"; }
-
-let S;
-try { S = JSON.parse(localStorage.getItem(KEY)) || seed(); } catch(e){ S = seed(); }
-const save = () => { try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){} };
-let role = "hr_admin";
-try { role = localStorage.getItem(KEY+"-role") || "hr_admin"; } catch(e){}
-const me = () => ROLES[role].me;
+/* ---------------- Supabase ---------------- */
+const SUPABASE_URL = "https://qonjlwsyjknvxqmochjk.supabase.co";
+// Publishable key: safe to ship in the browser. What each person can read or change is enforced by Row Level Security in the database.
+const SUPABASE_KEY = "sb_publishable_9t9fr_1nE1yNX73Je398pA_QvyeDQyY";
+const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+let S = {employees:[], leaves:[], attendance:{}, audit:[], seq:{letter:1}};
+let role = null, ME = null;
+const me = () => ME;
 const emp = id => S.employees.find(e=>e.id===id);
-const ename = id => (emp(id)||{name:id}).name;
-const log = act => { S.audit.unshift({at:nowStamp(), by:me(), act}); save(); };
+const ename = id => (emp(id)||{name:id||"—"}).name;
+const log = act => { S.audit.unshift({at:nowStamp(), by:me(), act}); return db.from("audit_log").insert({by_employee:me(), action:act}).then(({error})=>{ if(error) console.warn("audit:", error.message); }); };
+
+async function loadAll(){
+  const monthStart = TODAY.getFullYear()+"-"+pad(TODAY.getMonth()+1)+"-01";
+  const res = await Promise.all([
+    db.from("employees").select("*").order("id"),
+    db.from("employee_sensitive").select("*"),
+    db.from("leave_requests").select("*").order("id"),
+    db.from("documents").select("*").order("doc_date").order("created_at"),
+    db.from("attendance").select("*").gte("day", monthStart),
+    role==="hr_admin" ? db.from("audit_log").select("*").order("at",{ascending:false}).limit(300) : Promise.resolve({data:[]})
+  ]);
+  const bad = res.find(r=>r.error); if(bad) throw bad.error;
+  const [e,s,l,d,a,au] = res.map(r=>r.data||[]);
+  const sens = Object.fromEntries(s.map(x=>[x.employee_id,x]));
+  S.employees = e.map(x=>{ const z=sens[x.id]||{}; return {
+    id:x.id, name:x.name, email:x.email, phone:x.phone, designation:x.designation, dept:x.dept, manager:x.manager_id,
+    doj:x.doj, location:x.location, type:x.type, status:x.status, lwd:x.lwd, elCarry:+x.el_carry,
+    ctc: z.ctc!=null ? +z.ctc : undefined, gender:z.gender, pan:z.pan, uan:z.uan||"", aadhaarLast4:z.aadhaar_last4, bankLast4:z.bank_last4||"",
+    docs: d.filter(q=>q.employee_id===x.id).map(q=>({id:q.id, name:q.name, kind:q.kind, date:q.doc_date, status:q.status}))
+  }; });
+  S.leaves = l.map(x=>({id:x.id, emp:x.employee_id, type:x.type, from:x.from_date, to:x.to_date, status:x.status, reason:x.reason, applied:x.applied_on, history:x.history||[]}));
+  S.attendance = {};
+  a.forEach(x=>{ (S.attendance[x.employee_id] = S.attendance[x.employee_id]||{})[x.day] = {in:x.check_in, out:x.check_out}; });
+  S.audit = au.map(x=>{ const t=new Date(x.at); return {at:iso(t)+" "+pad(t.getHours())+":"+pad(t.getMinutes()), by:x.by_employee, act:x.action}; });
+  S.seq.letter = S.employees.reduce((n,x)=>n+x.docs.filter(q=>q.kind==="Letter"&&/ref \d+/.test(q.name)).length,0)+1;
+}
+// Write to the database, then reload so the screen always shows what the database holds
+async function mutate(op, {ok, logMsg, after}={}){
+  document.body.style.cursor="progress";
+  let error = null;
+  try { const r = await op; error = r && r.error; } catch(e){ error = e; }
+  if(!error && logMsg) await log(logMsg);
+  try { await loadAll(); } catch(e){ error = error || e; }
+  document.body.style.cursor="";
+  render();
+  if(error){ toast("Couldn't save: "+(error.message||error)); return false; }
+  if(ok) toast(ok);
+  if(after) after();
+  return true;
+}
+// Run dependent writes in order, stopping at the first error
+const chain = (...steps) => (async()=>{ let prev; for(const st of steps){ const r = await st(prev); if(r && r.error) return r; prev = r; } return prev||{}; })();
 const toast = m => { const t=$("#toast"); t.textContent=m; t.classList.add("show"); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove("show"),2400); };
 const reports = id => S.employees.filter(e=>e.manager===id);
 const allReports = id => { const out=[]; const walk=x=>reports(x).forEach(r=>{out.push(r);walk(r.id);}); walk(id); return out; };
@@ -355,8 +338,8 @@ function balances(id){
   const prorate = e.doj > year+"-01-01" ? (12-startMonth)/12 : 1;
   for(const [k,t] of Object.entries(LEAVE_TYPES)){
     if(k==="LOP") continue;
-    if(k==="ML" && e.gender!=="F") continue;
-    if(k==="PL" && e.gender!=="M") continue;
+    if(k==="ML" && e.gender && e.gender!=="F") continue;
+    if(k==="PL" && e.gender && e.gender!=="M") continue;
     let ent = t.annual;
     if(k==="CL"||k==="SL") ent = Math.floor(t.annual*prorate);
     if(k==="EL") ent = +(Math.min(18, monthsServed*1.5) + (e.doj > year+"-01-01" ? 0 : e.elCarry)).toFixed(1);
@@ -452,9 +435,10 @@ const ui = {q:"", dept:"", status:"", page:1, leaveTab:"apply", payMonth:"", com
 function renderNav(){
   $("#nav").innerHTML = VIEWS.filter(v=>v.roles.includes(role)).map(v=>
     `<a href="#${v.id}" class="${v.id===view?"on":""}"><svg viewBox="0 0 24 24" aria-hidden="true">${IC[v.icon]}</svg>${v.label}</a>`).join("") +
-    `<div class="foot">Demo data stays in this browser.<br><button class="btn sm" data-a="reset" style="margin-top:8px">Reset demo data</button></div>`;
+    `<div class="foot">Data is stored in Supabase. The database checks access for every row.</div>`;
 }
 function route(){
+  if(!role) return;
   const h = location.hash.replace("#","");
   const allowed = VIEWS.filter(v=>v.roles.includes(role)).map(v=>v.id);
   view = allowed.includes(h) ? h : "dashboard";
@@ -574,7 +558,7 @@ function empDetail(id, inline){
     <p class="note" style="margin-top:10px">Balances for ${TODAY.getFullYear()}. EL includes ${e.elCarry} day(s) carried forward.</p>
   </div>
   <div data-pane="docs" hidden>
-    <div class="list">${e.docs.map((d,i)=>`<div class="row"><div class="grow"><b>${esc(d.name)}</b><div class="sub">${esc(d.kind)} · ${fmt(d.date)}</div></div><span class="pill ${d.status==="Pending"?"warn":"good"}">${esc(d.status)}</span>${role==="hr_admin"&&d.status==="Pending"?`<button class="btn sm" data-a="verifyDoc" data-id="${id}" data-i="${i}">Mark verified</button>`:""}</div>`).join("")}</div>
+    <div class="list">${e.docs.map((d,i)=>`<div class="row"><div class="grow"><b>${esc(d.name)}</b><div class="sub">${esc(d.kind)} · ${fmt(d.date)}</div></div><span class="pill ${d.status==="Pending"?"warn":"good"}">${esc(d.status)}</span>${role==="hr_admin"&&d.status==="Pending"?`<button class="btn sm" data-a="verifyDoc" data-id="${id}" data-doc="${esc(d.id)}">Mark verified</button>`:""}</div>`).join("")}</div>
     ${role==="hr_admin"||id===me()?`<div class="field" style="margin-top:12px"><label for="docUp">Add a document</label><input type="file" id="docUp" data-emp="${id}"><span class="hint">Demo records the file name and date only; the file itself is not stored.</span></div>`:""}
   </div>
   ${sens?`<div data-pane="pay" hidden>
@@ -856,18 +840,20 @@ async function copy(text, msg){
 /* ---------------- Events ---------------- */
 function actLeave(id, ok){
   const l = S.leaves.find(x=>x.id===id); if(!l||!canAct(l)) return;
-  const days = leaveDays(l.type,l.from,l.to);
-  if(!ok){ l.status="Rejected"; l.history.push({at:nowStamp(),by:me(),act:"Rejected"}); log(`Rejected ${l.id} for ${ename(l.emp)}`); toast("Leave rejected. "+ename(l.emp).split(" ")[0]+" will be notified."); }
-  else if(l.status==="Pending manager" && role!=="hr_admin" && (days>5 || l.type==="ML")){ l.status="Pending HR"; l.history.push({at:nowStamp(),by:me(),act:"Approved by manager, sent to HR"}); log(`Approved ${l.id} for ${ename(l.emp)} at manager level; sent to HR (${days} days)`); toast("Approved and sent to HR, since it is over 5 days."); }
-  else { l.status="Approved"; l.history.push({at:nowStamp(),by:me(),act:"Approved"}); log(`Approved ${l.id} for ${ename(l.emp)} (${l.type}, ${days} days)`); toast("Leave approved."); }
-  save(); render();
+  const days = leaveDays(l.type,l.from,l.to), calSpan = (P(l.to)-P(l.from))/864e5;
+  let status, act, msg, logMsg;
+  if(!ok){ status="Rejected"; act="Rejected"; msg="Leave rejected. "+ename(l.emp).split(" ")[0]+" will see it in their requests."; logMsg=`Rejected ${l.id} for ${ename(l.emp)}`; }
+  else if(l.status==="Pending manager" && role!=="hr_admin" && (days>5 || calSpan>=5 || l.type==="ML")){ status="Pending HR"; act="Approved by manager, sent to HR"; msg="Approved and sent to HR, since it is over 5 days."; logMsg=`Approved ${l.id} for ${ename(l.emp)} at manager level; sent to HR (${days} days)`; }
+  else { status="Approved"; act="Approved"; msg="Leave approved."; logMsg=`Approved ${l.id} for ${ename(l.emp)} (${l.type}, ${days} days)`; }
+  mutate(db.from("leave_requests").update({status, history:[...l.history,{at:nowStamp(),by:me(),act}]}).eq("id",id), {ok:msg, logMsg});
 }
 document.addEventListener("click", e=>{
   const t = e.target.closest("[data-a]"); if(!t) return;
   const a=t.dataset.a, id=t.dataset.id;
   if(t.tagName==="A") return;
   switch(a){
-    case "reset": S=seed(); save(); toast("Demo data reset."); route(); break;
+    case "signout": db.auth.signOut().then(()=>{ history.replaceState(null,"",location.pathname); showLogin(); }); break;
+    case "demo": { const f=$("#loginForm"); f.email.value=t.dataset.email; f.password.value="Sahyadri@2026"; f.requestSubmit(); break; }
     case "close": closeDrawer(); break;
     case "openEmp":
       if(!visibleEmps().some(x=>x.id===id) && role!=="hr_admin"){
@@ -879,17 +865,22 @@ document.addEventListener("click", e=>{
     case "pg": ui.page+=+t.dataset.d; render(); break;
     case "approve": actLeave(id,true); break;
     case "reject": actLeave(id,false); break;
-    case "cancelLeave": { const l=S.leaves.find(x=>x.id===id); l.status="Withdrawn"; l.history.push({at:nowStamp(),by:me(),act:"Withdrawn"}); log(`Withdrew leave ${id}`); save(); render(); toast("Request withdrawn."); break; }
+    case "cancelLeave": { const l=S.leaves.find(x=>x.id===id); mutate(db.from("leave_requests").update({status:"Withdrawn", history:[...l.history,{at:nowStamp(),by:me(),act:"Withdrawn"}]}).eq("id",id), {ok:"Request withdrawn.", logMsg:`Withdrew leave ${id}`}); break; }
     case "leaveHist": { const l=S.leaves.find(x=>x.id===id); openDrawer(`<div class="dh"><div><h2>${esc(ename(l.emp))} · ${LEAVE_TYPES[l.type].name}</h2><div style="color:var(--muted)">${fmt(l.from)} to ${fmt(l.to)} · ${leaveDays(l.type,l.from,l.to)} day(s)</div></div><button class="btn sm x" data-a="close">Close</button></div><div class="list">${l.history.map(h=>`<div class="row"><div class="grow"><b>${esc(h.act)}</b><div class="sub">${esc(ename(h.by))} · ${esc(h.at)}</div></div></div>`).join("")}</div>`); break; }
     case "ltab": ui.leaveTab=t.dataset.t; render(); break;
     case "ctab": ui.compTab=t.dataset.t; render(); break;
-    case "clock": { const d=new Date(), tm=pad(d.getHours())+":"+pad(d.getMinutes()); S.attendance[me()]=S.attendance[me()]||{}; const r=S.attendance[me()][TODAY_S]; if(!r){S.attendance[me()][TODAY_S]={in:tm}; log("Checked in at "+tm); toast("Checked in at "+tm);} else if(!r.out){ r.out=tm; log("Checked out at "+tm); toast("Checked out at "+tm);} else toast("You have already checked out today."); save(); render(); break; }
+    case "clock": { const d=new Date(), tm=pad(d.getHours())+":"+pad(d.getMinutes()); const r=(S.attendance[me()]||{})[TODAY_S];
+      if(!r) mutate(db.from("attendance").insert({employee_id:me(), day:TODAY_S, check_in:tm}), {ok:"Checked in at "+tm, logMsg:"Checked in at "+tm});
+      else if(!r.out) mutate(db.from("attendance").update({check_out:tm}).eq("employee_id",me()).eq("day",TODAY_S), {ok:"Checked out at "+tm, logMsg:"Checked out at "+tm});
+      else toast("You have already checked out today."); break; }
     case "goLetter": closeDrawer(); ui.letterEmp=id; ui.letterType=t.dataset.t; ui.letterOpts={}; location.hash="letters"; if(view==="letters") render(); break;
     case "copyLetter": copy($("#letterOut").innerText, "Letter text copied."); break;
-    case "issueLetter": { const x=emp(ui.letterEmp); x.docs.push({name:LETTERS[ui.letterType]+" · ref "+pad(S.seq.letter), kind:"Letter", date:TODAY_S, status:"Issued"}); log(`Issued ${LETTERS[ui.letterType]} to ${x.name} (ref ${pad(S.seq.letter)})`); S.seq.letter++; save(); render(); toast("Letter filed in "+x.name.split(" ")[0]+"'s documents."); break; }
-    case "resign": { const x=emp(id); x.status="Notice"; x.lwd=iso(addDays(TODAY,60)); x.docs.push({name:"Resignation",kind:"Exit",date:TODAY_S,status:"Received"}); log(`Recorded resignation of ${x.name}; LWD ${fmt(x.lwd)} (60-day notice)`); save(); openDrawer(empDetail(id)); render(); toast("Resignation recorded. Last working day "+fmt(x.lwd)+"."); break; }
-    case "exit": { const x=emp(id); x.status="Exited"; log(`Marked ${x.name} as exited`); save(); closeDrawer(); render(); toast(x.name+" marked as exited."); break; }
-    case "verifyDoc": { const x=emp(id); x.docs[+t.dataset.i].status="Verified"; log(`Verified ${x.docs[+t.dataset.i].name} for ${x.name}`); save(); openDrawer(empDetail(id)); document.querySelector('#drawer [data-t="docs"]').click(); break; }
+    case "issueLetter": { const x=emp(ui.letterEmp), ref=pad(S.seq.letter); mutate(db.from("documents").insert({employee_id:x.id, name:LETTERS[ui.letterType]+" · ref "+ref, kind:"Letter", doc_date:TODAY_S, status:"Issued"}), {ok:"Letter filed in "+x.name.split(" ")[0]+"'s documents.", logMsg:`Issued ${LETTERS[ui.letterType]} to ${x.name} (ref ${ref})`}); break; }
+    case "resign": { const x=emp(id), lwd=iso(addDays(TODAY,60));
+      mutate(chain(()=>db.from("employees").update({status:"Notice", lwd}).eq("id",id), ()=>db.from("documents").insert({employee_id:id, name:"Resignation", kind:"Exit", doc_date:TODAY_S, status:"Received"})),
+        {ok:"Resignation recorded. Last working day "+fmt(lwd)+".", logMsg:`Recorded resignation of ${x.name}; LWD ${fmt(lwd)} (60-day notice)`, after:()=>openDrawer(empDetail(id))}); break; }
+    case "exit": { const x=emp(id); closeDrawer(); mutate(db.from("employees").update({status:"Exited"}).eq("id",id), {ok:x.name+" marked as exited.", logMsg:`Marked ${x.name} as exited`}); break; }
+    case "verifyDoc": { const x=emp(id), d=x.docs.find(q=>q.id===t.dataset.doc); mutate(db.from("documents").update({status:"Verified"}).eq("id",d.id), {ok:"Document verified.", logMsg:`Verified ${d.name} for ${x.name}`, after:()=>{ openDrawer(empDetail(id)); document.querySelector('#drawer [data-t="docs"]').click(); }}); break; }
     case "copyPay": { const ms=ui.payMonth||curMonth(); const [y,mm]=ms.split("-").map(Number); const rows=S.employees.map(e=>({e,p:pay(e,y,mm-1)})).filter(r=>r.p); copy(["emp_id,name,payable_days,lop_days,gross_earned,basic_earned,ee_pf,ee_esi,pt,net_before_tds",...rows.map(({e,p})=>[e.id,'"'+e.name+'"',p.payable,p.lop,p.eGross,p.eBasic,p.eePF,p.eeESI,p.pt,p.net].join(","))].join("\n"),"Payroll inputs copied as CSV."); log("Exported payroll inputs for "+ms); break; }
     case "copyECR": copy(ecrText(),"ECR text copied."); log("Exported PF ECR for "+(ui.compMonth||"last month")); break;
     case "copyAudit": copy(["when,who,what",...S.audit.map(a=>[a.at,'"'+ename(a.by)+'"','"'+a.act.replace(/"/g,'""')+'"'].join(","))].join("\n"),"Audit trail copied."); break;
@@ -915,7 +906,7 @@ document.addEventListener("change", e=>{
   if(t.id==="lt_emp"){ ui.letterEmp=t.value; ui.letterOpts={}; render(); }
   if(t.id==="lt_type"){ ui.letterType=t.value; ui.letterOpts={}; render(); }
   if(t.id==="l_type"){ $("#l_note").textContent=LEAVE_TYPES[t.value].note; leaveCalc(); }
-  if(t.id==="docUp" && t.files[0]){ const x=emp(t.dataset.emp); x.docs.push({name:t.files[0].name, kind:"Uploaded", date:TODAY_S, status:role==="hr_admin"?"Verified":"Pending"}); log(`Added document "${t.files[0].name}" for ${x.name}`); save(); openDrawer(empDetail(x.id)); document.querySelector('#drawer [data-t="docs"]').click(); toast("Document added."); }
+  if(t.id==="docUp" && t.files[0]){ const x=emp(t.dataset.emp), fname=t.files[0].name; mutate(db.from("documents").insert({employee_id:x.id, name:fname, kind:"Uploaded", doc_date:TODAY_S, status:role==="hr_admin"?"Verified":"Pending"}), {ok:"Document added.", logMsg:`Added document "${fname}" for ${x.name}`, after:()=>{ openDrawer(empDetail(x.id)); document.querySelector('#drawer [data-t="docs"]').click(); }}); }
 });
 function leaveCalc(){
   const f=$("#leaveForm"); if(!f) return;
@@ -928,12 +919,28 @@ function leaveCalc(){
 document.addEventListener("submit", e=>{
   e.preventDefault();
   const f=e.target;
+  if(f.id==="loginForm"){
+    const btn=f.querySelector('[type=submit]'), msg=$("#loginErr"); btn.disabled=true; msg.textContent="";
+    db.auth.signInWithPassword({email:f.email.value.trim(), password:f.password.value}).then(({error})=>{
+      btn.disabled=false;
+      if(error){ msg.textContent = error.message==="Invalid login credentials" ? "That email and password don't match. Check them and try again." : error.message; return; }
+      boot();
+    });
+    return;
+  }
   if(f.id==="empForm"){
     const {v,errs,aadNote} = validateEmp(f);
     if(Object.keys(errs).length){ const first=f.querySelector(".field.invalid input,.field.invalid select"); first&&first.focus(); toast("Fix the highlighted fields to continue."); return; }
     v.ctc=+v.ctc; v.manager=v.manager||null;
-    if(f.dataset.id){ const x=emp(f.dataset.id); const changed=Object.keys(v).filter(k=>String(x[k]??"")!==String(v[k]??"")); Object.assign(x,v); log(`Updated ${x.name} (${x.id}): ${changed.join(", ")||"no changes"}`); save(); openDrawer(empDetail(x.id)); render(); toast("Saved."+aadNote); }
-    else { S.seq.emp++; const nid="EMP"+String(S.seq.emp).padStart(3,"0"); const x=Object.assign({id:nid, elCarry:0, docs:[{name:"Offer letter",kind:"Letter",date:v.doj,status:"Pending"}]},v); S.employees.push(x); log(`Added employee ${x.name} (${nid})`); save(); openDrawer(empDetail(nid)); render(); toast(x.name+" added as "+nid+"."+aadNote); }
+    const base={name:v.name, email:v.email, phone:v.phone, designation:v.designation.trim(), dept:v.dept, manager_id:v.manager, doj:v.doj, location:v.location, type:v.type, status:v.status};
+    const sen={ctc:v.ctc, gender:v.gender, pan:v.pan, uan:v.uan||null, aadhaar_last4:v.aadhaarLast4, bank_last4:v.bankLast4||null};
+    const btn=f.querySelector('[type=submit]'); btn.disabled=true;
+    if(f.dataset.id){ const x=emp(f.dataset.id); const changed=Object.keys(v).filter(k=>String(x[k]??"")!==String(v[k]??""));
+      mutate(chain(()=>db.from("employees").update(base).eq("id",x.id), ()=>db.from("employee_sensitive").upsert({employee_id:x.id, ...sen})),
+        {ok:"Saved."+aadNote, logMsg:`Updated ${v.name} (${x.id}): ${changed.join(", ")||"no changes"}`, after:()=>openDrawer(empDetail(x.id))}).then(okd=>{ if(!okd) btn.disabled=false; }); }
+    else { let nid;
+      mutate(chain(()=>db.from("employees").insert(base).select("id").single(), r=>{ nid=r.data.id; return db.from("employee_sensitive").insert({employee_id:nid, ...sen}); }, ()=>db.from("documents").insert({employee_id:nid, name:"Offer letter", kind:"Letter", doc_date:v.doj, status:"Pending"})),
+        {ok:v.name+" added.", logMsg:`Added employee ${v.name}`, after:()=>openDrawer(empDetail(nid))}).then(okd=>{ if(!okd) btn.disabled=false; else if(aadNote) toast(v.name+" added."+aadNote); }); }
   }
   if(f.id==="leaveForm"){
     const type=f.type.value, from=f.from.value, to=f.to.value, reason=f.reason.value.trim();
@@ -949,18 +956,45 @@ document.addEventListener("submit", e=>{
     if(!bad && b && n>b.left){ set("to",`Only ${b.left} day(s) of ${LEAVE_TYPES[type].name.toLowerCase()} left. Shorten the dates or choose loss of pay.`); bad=true; }
     if(!bad && S.leaves.some(l=>l.emp===me()&&!["Rejected","Withdrawn"].includes(l.status)&&l.from<=to&&l.to>=from)){ set("from","You already have leave on some of these dates."); bad=true; }
     if(bad) return;
-    S.seq.leave++; const lid="LV"+S.seq.leave;
     const self = emp(me());
     const status = self.manager ? "Pending manager" : "Pending HR";
-    S.leaves.push({id:lid,emp:me(),type,from,to,status,reason,applied:TODAY_S,history:[{at:nowStamp(),by:me(),act:"Applied"}]});
-    log(`Applied for leave ${lid} (${type}, ${n} days)`); save(); render();
-    toast("Sent to "+ename(self.manager||"EMP002")+" for approval.");
+    f.querySelector('[type=submit]').disabled=true;
+    mutate(db.from("leave_requests").insert({employee_id:me(), type, from_date:from, to_date:to, status, reason, history:[{at:nowStamp(),by:me(),act:"Applied"}]}),
+      {ok:"Sent to "+ename(self.manager||"EMP002")+" for approval.", logMsg:`Applied for leave (${type}, ${n} days, ${fmt(from)} to ${fmt(to)})`});
   }
 });
-$("#roleSel").value = role;
-$("#roleSel").addEventListener("change", e=>{ role=e.target.value; try{localStorage.setItem(KEY+"-role",role);}catch(x){} ui.leaveTab="apply"; closeDrawer(); route(); toast("Now viewing as "+ename(me())+" ("+ROLES[role].label+")"); });
+function showLogin(msg){
+  role=null; ME=null; closeDrawer();
+  $(".app").classList.add("locked"); $("#nav").innerHTML="";
+  const demo=[["priya.kulkarni@sahyadritech.in","Priya Kulkarni","HR Admin"],["rahul.deshmukh@sahyadritech.in","Rahul Deshmukh","Manager"],["neha.patil@sahyadritech.in","Neha Patil","Employee"]];
+  $("#main").innerHTML = `<div class="card login">
+    <div><h1>Sign in</h1><p style="margin:4px 0 0;color:var(--muted)">Use your Sahyadri work email.</p></div>
+    <form id="loginForm" class="form" style="grid-template-columns:1fr" novalidate>
+      <div class="field"><label for="lg_email">Work email</label><input id="lg_email" name="email" type="email" autocomplete="username" required></div>
+      <div class="field"><label for="lg_pw">Password</label><input id="lg_pw" name="password" type="password" autocomplete="current-password" required></div>
+      <p class="err" id="loginErr">${esc(msg||"")}</p>
+      <button class="btn pri" type="submit">Sign in</button>
+    </form>
+    <div class="section-label" style="grid-column:auto">Demo accounts</div>
+    <p style="margin:-6px 0 0;font-size:13px;color:var(--muted)">Tap one to sign in. Password for all three: <span class="mono">Sahyadri@2026</span></p>
+    <div class="demo">${demo.map(d=>`<button class="btn" data-a="demo" data-email="${d[0]}"><b>${d[1]}</b><span class="pill">${d[2]}</span></button>`).join("")}</div>
+  </div>`;
+}
+async function boot(){
+  let session=null;
+  try { ({data:{session}} = await db.auth.getSession()); } catch(e){}
+  if(!session) return showLogin();
+  $("#main").innerHTML = '<div class="empty">Loading your workspace…</div>';
+  const {data:ur, error} = await db.from("user_roles").select("employee_id,role").eq("user_id", session.user.id).maybeSingle();
+  if(error || !ur){ await db.auth.signOut(); return showLogin(error ? "Couldn't reach the database: "+error.message : "This login isn't linked to an employee record yet. Ask HR to set it up."); }
+  role = ur.role; ME = ur.employee_id; ui.leaveTab="apply";
+  try { await loadAll(); } catch(e){ return showLogin("Couldn't load data: "+e.message); }
+  $(".app").classList.remove("locked");
+  $("#whoName").textContent = ename(ME)+" · "+ROLES[role].label;
+  route();
+}
 window.addEventListener("hashchange", route);
-route();
+boot();
 })();
 </script>
 </body>
