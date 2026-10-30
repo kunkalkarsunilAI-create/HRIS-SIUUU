@@ -263,7 +263,7 @@ const SUPABASE_URL = "https://qonjlwsyjknvxqmochjk.supabase.co";
 const SUPABASE_KEY = "sb_publishable_9t9fr_1nE1yNX73Je398pA_QvyeDQyY";
 // Sign-in is handled by Clerk. Clerk's session token is passed to Supabase (third-party auth),
 // and the database identifies the person by the verified email claim in that token.
-const CLERK_PUBLISHABLE_KEY = "__CLERK_KEY__";
+const CLERK_PUBLISHABLE_KEY = "pk_test_ZmxleGlibGUtdGFkcG9sZS02MDY3LmNsZXJrLmFjY291bnRzLmRldiQ=";
 const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
   accessToken: async () => (window.Clerk && window.Clerk.session) ? await window.Clerk.session.getToken() : null
 });
