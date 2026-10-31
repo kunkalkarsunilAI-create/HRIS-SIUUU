@@ -6,7 +6,8 @@ import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 
 // "gemini-flash-latest" always points at Google's current Flash model (free tier available).
 // Override with a GEMINI_MODEL secret if needed.
-const MODELS = [Deno.env.get("GEMINI_MODEL") || "gemini-flash-latest", "gemini-2.5-flash"];
+// If one model is busy or out of free quota, the next is tried automatically.
+const MODELS = [...new Set([Deno.env.get("GEMINI_MODEL") || "gemini-flash-latest", "gemini-2.5-flash", "gemini-flash-lite-latest", "gemini-2.5-flash-lite"])];
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, apikey, content-type, x-client-info",
@@ -130,14 +131,20 @@ Rules:
   // Tool-use loop: Gemini asks for data, we fetch it under RLS, Gemini answers.
   const contents: unknown[] = history.map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }));
   const tools = [{ function_declarations: TOOLS.map((t) => ({ name: t.name, description: t.description, parameters: t.input_schema.required.length ? t.input_schema : { type: "object", properties: t.input_schema.properties } })) }];
-  let model = MODELS[0];
+  let mi = 0; // index of the model currently in use
   for (let step = 0; step < 6; step++) {
-    let r = await callGemini(model);
-    if (r.status === 404 && model !== MODELS[1]) { model = MODELS[1]; r = await callGemini(model); }
-    const out = await r.json();
+    let r: Response, out: any;
+    while (true) {
+      r = await callGemini(MODELS[mi]);
+      out = await r.json().catch(() => ({}));
+      // 404 = model not available, 429 = free quota used, 5xx = overloaded: move to the next model
+      if (!r.ok && [404, 429, 500, 503].includes(r.status) && mi < MODELS.length - 1) { mi++; continue; }
+      break;
+    }
     if (!r.ok) {
       const msg = out?.error?.message || r.statusText;
       if (r.status === 429) return json({ error: "The free Gemini quota is used up for now. Wait a minute and try again." }, 429);
+      if (r.status === 503 || r.status === 500) return json({ error: "Gemini is very busy right now. Please try again in a minute." }, 503);
       return json({ error: `The AI service returned an error: ${msg}` }, 502);
     }
     const cand = out.candidates?.[0];
