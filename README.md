@@ -28,6 +28,15 @@ Create these users in the Clerk dashboard (Users → Create user) to use them. A
 
 Setup: in Clerk, activate the Supabase integration and add `{"email": "{{user.primary_email_address}}"}` to the session token. In Supabase, add Clerk under Authentication → Third-Party Auth. Then put the Clerk publishable key in `CLERK_PUBLISHABLE_KEY` in `index.html`.
 
+## HR assistant (AI chatbot)
+
+The "Ask HR assistant" button opens a chatbot powered by **Claude** (Anthropic). It answers questions such as "How many leaves do I have left?", "Who is on leave this week?" or "When are PF and ESI due?".
+
+- It runs as a Supabase Edge Function (`supabase/functions/hr-assistant`), so the Claude API key stays on the server and never reaches the browser.
+- It looks up data with the signed-in person's own token, so Row Level Security limits it to exactly what that person can see in the app.
+- It can explain and look things up but cannot approve, reject or change anything, and it never reveals Aadhaar, PAN, bank details or other protected attributes.
+- Setup: add a secret named `ANTHROPIC_API_KEY` under Supabase → Edge Functions → Secrets.
+
 ## Database (Supabase)
 
 - `supabase/schema.sql`: tables, Row Level Security policies and the leave-approval rules enforced in the database.

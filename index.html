@@ -178,6 +178,30 @@ tfoot td{font-weight:600;background:var(--raised)}
 .login .err{color:var(--bad);font-size:14px;margin:0}
 .demo{display:flex;flex-direction:column;gap:6px}
 .demo button{justify-content:space-between;text-align:left}
+/* HR assistant chat */
+.chat-fab{position:fixed;right:18px;bottom:18px;z-index:15;display:flex;align-items:center;gap:8px;padding:12px 16px;border-radius:999px;border:0;background:var(--accent);color:var(--accent-ink);font-weight:600;cursor:pointer;box-shadow:0 6px 20px rgb(0 0 0 / .18)}
+.chat-fab svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.app.locked ~ .chat-fab,.app.locked ~ .chat{display:none!important}
+.chat{position:fixed;right:18px;bottom:18px;z-index:25;width:min(400px,calc(100vw - 24px));height:min(600px,calc(100vh - 36px));background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:0 12px 40px rgb(0 0 0 / .25);display:none;flex-direction:column;overflow:hidden}
+.chat.open{display:flex}
+.chat-head{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line)}
+.chat-head b{font-family:var(--display);font-size:16px}
+.chat-head small{display:block;color:var(--muted);font-size:12px;line-height:1.2}
+.chat-head .btn{margin-left:auto}
+.chat-log{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px}
+.msg{max-width:86%;padding:9px 12px;border-radius:12px;font-size:14px;line-height:1.5;overflow-wrap:anywhere}
+.msg.user{align-self:flex-end;background:var(--accent);color:var(--accent-ink);border-bottom-right-radius:4px}
+.msg.bot{align-self:flex-start;background:var(--raised);border-bottom-left-radius:4px}
+.msg.bot ul{margin:4px 0;padding-left:18px}
+.msg.err{align-self:flex-start;background:var(--bad-soft);color:var(--bad)}
+.msg.typing{color:var(--muted);font-style:italic}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chips button{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:6px 10px;font-size:13px;cursor:pointer;text-align:left}
+.chips button:hover{border-color:var(--accent)}
+.chat-form{display:flex;gap:8px;padding:10px;border-top:1px solid var(--line)}
+.chat-form textarea{flex:1;resize:none;border:1px solid var(--line);border-radius:10px;padding:9px 10px;background:var(--surface);font:14px/1.4 var(--body);max-height:110px}
+.chat-note{font-size:11px;color:var(--muted);padding:0 12px 10px;line-height:1.35}
+@media (max-width: 520px){ .chat{right:0;bottom:0;width:100vw;height:100%;border-radius:0} .chat-fab span{display:none} }
 .bar{height:8px;border-radius:99px;background:var(--raised);overflow:hidden}
 .bar i{display:block;height:100%;background:var(--accent);border-radius:99px}
 
@@ -212,6 +236,13 @@ tfoot td{font-weight:600;background:var(--raised)}
 </div>
 <div class="overlay" id="ov" role="dialog" aria-modal="true"><div class="drawer" id="drawer"></div></div>
 <div class="toast" id="toast" role="status"></div>
+<button class="chat-fab" id="chatFab" data-a="chatOpen" aria-label="Ask the HR assistant"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/><path d="M8 9.5h8M8 12.5h5"/></svg><span>Ask HR assistant</span></button>
+<section class="chat" id="chat" role="dialog" aria-label="HR assistant">
+  <div class="chat-head"><div class="avatar">AI</div><div><b>HR assistant</b><small>Answers from your HRIS data, powered by Claude</small></div><button class="btn sm" data-a="chatClose" aria-label="Close assistant">Close</button></div>
+  <div class="chat-log" id="chatLog" aria-live="polite"></div>
+  <form class="chat-form" id="chatForm"><textarea id="chatInput" rows="1" placeholder="Ask about leave, holidays, payroll…" aria-label="Your question"></textarea><button class="btn pri" type="submit">Send</button></form>
+  <p class="chat-note">AI can make mistakes. It sees only what your login can see, and it can't approve or change anything.</p>
+</section>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
@@ -857,7 +888,10 @@ document.addEventListener("click", e=>{
   const a=t.dataset.a, id=t.dataset.id;
   if(t.tagName==="A") return;
   switch(a){
-    case "signout": window.Clerk.signOut().then(()=>{ history.replaceState(null,"",location.pathname); showLogin(); }); break;
+    case "chatOpen": $("#chat").classList.add("open"); $("#chatFab").style.display="none"; renderChat(false); $("#chatInput").focus(); break;
+    case "chatClose": $("#chat").classList.remove("open"); $("#chatFab").style.display=""; break;
+    case "chatAsk": askAssistant(t.dataset.q); break;
+    case "signout": chatHistory=[]; $("#chat").classList.remove("open"); $("#chatFab").style.display=""; window.Clerk.signOut().then(()=>{ history.replaceState(null,"",location.pathname); showLogin(); }); break;
     case "close": closeDrawer(); break;
     case "openEmp":
       if(!visibleEmps().some(x=>x.id===id) && role!=="hr_admin"){
@@ -891,6 +925,8 @@ document.addEventListener("click", e=>{
   }
 });
 document.addEventListener("keydown", e=>{
+  if(e.target.id==="chatInput" && e.key==="Enter" && !e.shiftKey){ e.preventDefault(); $("#chatForm").requestSubmit(); return; }
+  if(e.key==="Escape" && $("#chat").classList.contains("open")){ $("#chat").classList.remove("open"); $("#chatFab").style.display=""; return; }
   if(e.key==="Escape") closeDrawer();
   if(e.key==="Enter" && e.target.matches("tr.click")) e.target.click();
 });
@@ -923,6 +959,7 @@ function leaveCalc(){
 document.addEventListener("submit", e=>{
   e.preventDefault();
   const f=e.target;
+  if(f.id==="chatForm"){ const i=$("#chatInput"); const q=i.value; i.value=""; askAssistant(q); return; }
   if(f.id==="empForm"){
     const {v,errs,aadNote} = validateEmp(f);
     if(Object.keys(errs).length){ const first=f.querySelector(".field.invalid input,.field.invalid select"); first&&first.focus(); toast("Fix the highlighted fields to continue."); return; }
@@ -958,6 +995,48 @@ document.addEventListener("submit", e=>{
       {ok:"Sent to "+ename(self.manager||"EMP002")+" for approval.", logMsg:`Applied for leave (${type}, ${n} days, ${fmt(from)} to ${fmt(to)})`});
   }
 });
+/* ---------------- HR assistant (chatbot) ---------------- */
+let chatHistory = [];
+const CHAT_URL = SUPABASE_URL + "/functions/v1/hr-assistant";
+function chatSuggestions(){
+  if(role==="hr_admin") return ["Who is on leave this week?","Which leave requests are waiting for HR?","Who joined in 2026?","When are PF and ESI due?"];
+  if(role==="manager") return ["What's pending for my approval?","Who in my team is on leave in November?","Explain the leave approval rules"];
+  return ["How many leaves do I have left?","When is the next holiday?","When does my probation end?","How is my PF calculated?"];
+}
+function mdLite(t){
+  const lines = esc(t).replace(/\*\*(.+?)\*\*/g,"<b>$1</b>").split(/\n/);
+  let html="", inList=false;
+  for(const ln of lines){
+    const m = ln.match(/^\s*[-•*]\s+(.*)/);
+    if(m){ if(!inList){ html+="<ul>"; inList=true; } html+="<li>"+m[1]+"</li>"; continue; }
+    if(inList){ html+="</ul>"; inList=false; }
+    html += ln.trim() ? ln+"<br>" : "<br>";
+  }
+  if(inList) html+="</ul>";
+  return html.replace(/(<br>)+$/,"");
+}
+function renderChat(pending){
+  const log=$("#chatLog");
+  let html = chatHistory.length ? "" : `<div class="msg bot">Hi ${esc(ename(ME).split(" ")[0])}, I'm the Sahyadri HR assistant. Ask me about leave, holidays, policies or ${role==="employee"?"your records":"your team"}.</div><div class="chips">${chatSuggestions().map(q=>`<button type="button" data-a="chatAsk" data-q="${esc(q)}">${esc(q)}</button>`).join("")}</div>`;
+  html += chatHistory.map(m=> m.role==="user" ? `<div class="msg user">${esc(m.content)}</div>` : m.role==="error" ? `<div class="msg err">${esc(m.content)}</div>` : `<div class="msg bot">${mdLite(m.content)}</div>`).join("");
+  if(pending) html += '<div class="msg bot typing">Looking that up…</div>';
+  log.innerHTML = html; log.scrollTop = log.scrollHeight;
+}
+async function askAssistant(q){
+  q = (q||"").trim(); if(!q) return;
+  chatHistory.push({role:"user", content:q}); renderChat(true);
+  const btn=$("#chatForm [type=submit]"); btn.disabled=true;
+  try{
+    const token = window.Clerk && window.Clerk.session ? await window.Clerk.session.getToken() : null;
+    const ctx = { role, employee_id: ME, leave_balances: (()=>{ try{ return balances(ME); }catch(e){ return null; } })() };
+    const r = await fetch(CHAT_URL, { method:"POST", headers:{ "Content-Type":"application/json", "apikey":SUPABASE_KEY, "Authorization":"Bearer "+token },
+      body: JSON.stringify({ messages: chatHistory.filter(m=>m.role!=="error").map(m=>({role:m.role, content:m.content})), context: ctx }) });
+    const out = await r.json().catch(()=>({error:"The assistant sent an unreadable reply."}));
+    if(!r.ok || out.error) chatHistory.push({role:"error", content: out.error || ("The assistant is unavailable ("+r.status+").")});
+    else { chatHistory.push({role:"assistant", content: out.reply}); log("Asked the HR assistant a question"); }
+  }catch(e){ chatHistory.push({role:"error", content:"Couldn't reach the assistant. Check your connection and try again."}); }
+  btn.disabled=false; renderChat(false); $("#chatInput").focus();
+}
 function loadScript(src, attrs={}){
   return new Promise((res,rej)=>{ const el=document.createElement("script"); el.src=src; el.crossOrigin="anonymous"; el.async=true;
     for(const [k,v] of Object.entries(attrs)) el.setAttribute(k,v);
@@ -995,7 +1074,7 @@ async function boot(){
   const {data:ur, error} = await db.from("app_logins").select("employee_id,role").eq("email", email).maybeSingle();
   if(error) return showLogin("Couldn't reach the database: "+error.message+". If this keeps happening, HR should check the Clerk and Supabase connection.", true);
   if(!ur) return showLogin(`${email} isn't linked to an employee record yet. Ask HR to add it.`, true);
-  role = ur.role; ME = ur.employee_id; ui.leaveTab="apply";
+  role = ur.role; ME = ur.employee_id; ui.leaveTab="apply"; chatHistory=[];
   try { await loadAll(); } catch(e){ return showLogin("Couldn't load data: "+e.message, true); }
   $(".app").classList.remove("locked");
   $("#whoName").textContent = ename(ME)+" · "+ROLES[role].label;
