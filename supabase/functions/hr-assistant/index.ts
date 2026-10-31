@@ -1,10 +1,12 @@
-// Sahyadri HRIS assistant: answers HR questions with Claude.
-// The Claude API key stays here on the server (Supabase secret ANTHROPIC_API_KEY).
+// Sahyadri HRIS assistant: answers HR questions with Google Gemini.
+// The Gemini API key stays here on the server (Supabase secret GEMINI_API_KEY).
 // Every data lookup runs with the signed-in user's own token, so Row Level Security
 // limits the assistant to exactly what that person may see in the app.
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 
-const MODEL = "claude-sonnet-5-5";
+// "gemini-flash-latest" always points at Google's current Flash model (free tier available).
+// Override with a GEMINI_MODEL secret if needed.
+const MODELS = [Deno.env.get("GEMINI_MODEL") || "gemini-flash-latest", "gemini-2.5-flash"];
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, apikey, content-type, x-client-info",
@@ -48,8 +50,8 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ error: "Use POST" }, 405);
 
-  const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
-  if (!apiKey) return json({ error: "The assistant isn't set up yet: HR needs to add the ANTHROPIC_API_KEY secret in Supabase." }, 503);
+  const apiKey = Deno.env.get("GEMINI_API_KEY");
+  if (!apiKey) return json({ error: "The assistant isn't set up yet: HR needs to add the GEMINI_API_KEY secret in Supabase." }, 503);
 
   const auth = req.headers.get("Authorization") || "";
   const token = auth.replace(/^Bearer\s+/i, "");
@@ -125,32 +127,44 @@ Rules:
     return { error: "Unknown tool" };
   }
 
-  // Tool-use loop: Claude asks for data, we fetch it under RLS, Claude answers.
-  const messages: unknown[] = [...history];
+  // Tool-use loop: Gemini asks for data, we fetch it under RLS, Gemini answers.
+  const contents: unknown[] = history.map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }));
+  const tools = [{ function_declarations: TOOLS.map((t) => ({ name: t.name, description: t.description, parameters: t.input_schema.required.length ? t.input_schema : { type: "object", properties: t.input_schema.properties } })) }];
+  let model = MODELS[0];
   for (let step = 0; step < 6; step++) {
-    const r = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-      body: JSON.stringify({ model: MODEL, max_tokens: 900, system, tools: TOOLS, messages }),
-    });
+    let r = await callGemini(model);
+    if (r.status === 404 && model !== MODELS[1]) { model = MODELS[1]; r = await callGemini(model); }
     const out = await r.json();
     if (!r.ok) {
       const msg = out?.error?.message || r.statusText;
+      if (r.status === 429) return json({ error: "The free Gemini quota is used up for now. Wait a minute and try again." }, 429);
       return json({ error: `The AI service returned an error: ${msg}` }, 502);
     }
-    if (out.stop_reason === "tool_use") {
-      messages.push({ role: "assistant", content: out.content });
-      const results = [];
-      for (const block of out.content) {
-        if (block.type !== "tool_use") continue;
-        const result = await runTool(block.name, block.input || {});
-        results.push({ type: "tool_result", tool_use_id: block.id, content: JSON.stringify(result).slice(0, 12000) });
+    const cand = out.candidates?.[0];
+    const parts = cand?.content?.parts || [];
+    const calls = parts.filter((p: { functionCall?: unknown }) => p.functionCall);
+    if (calls.length) {
+      contents.push(cand.content); // keep the model turn unchanged (includes thought signatures)
+      const responses = [];
+      for (const p of calls) {
+        const fc = p.functionCall as { name: string; args?: Record<string, string>; id?: string };
+        const result = await runTool(fc.name, fc.args || {});
+        responses.push({ functionResponse: { name: fc.name, ...(fc.id ? { id: fc.id } : {}), response: { result: JSON.parse(JSON.stringify(result ?? null)) } } });
       }
-      messages.push({ role: "user", content: results });
+      contents.push({ role: "user", parts: responses });
       continue;
     }
-    const reply = (out.content || []).filter((b: { type: string }) => b.type === "text").map((b: { text: string }) => b.text).join("\n").trim();
+    const reply = parts.filter((p: { text?: string; thought?: boolean }) => p.text && !p.thought).map((p: { text: string }) => p.text).join("\n").trim();
+    if (!reply && cand?.finishReason === "SAFETY") return json({ reply: "I can't help with that request." });
     return json({ reply: reply || "I couldn't find an answer to that." });
   }
   return json({ reply: "That needed too many lookups. Try asking a more specific question." });
+
+  function callGemini(m: string) {
+    return fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, {
+      method: "POST",
+      headers: { "x-goog-api-key": apiKey!, "content-type": "application/json" },
+      body: JSON.stringify({ system_instruction: { parts: [{ text: system }] }, contents, tools, generationConfig: { maxOutputTokens: 1500 } }),
+    });
+  }
 });
